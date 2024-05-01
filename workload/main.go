@@ -65,6 +65,21 @@ func randomBigInt() *big.Int {
 	return ret
 }
 
+func randomTransferAmountBigInt() *big.Int {
+	// range:  a ... b inclusive   10 ... 100
+	// extent: (b - a) + 1     (100 - 10) + 1 => 91
+	// large random number: num (from SDK)
+	// c: (num % extent) 0..(extent-1)
+	// result = a + c
+
+	low := uint64(1)
+	high := uint64(100)
+	extent := uint64((high - low) + 1)
+	v := random.GetRandom()
+	result := int64(low + (v % extent))
+	return big.NewInt(result)
+}
+
 func runWorkload(ctx context.Context, client *sdk.Formance) {
 	// const count = 1000
 
@@ -137,17 +152,48 @@ func runWorkload(ctx context.Context, client *sdk.Formance) {
 		},
 	)
 
-	checkBalance(ctx, client, "account:0", big.NewInt(1000))
-	checkBalance(ctx, client, "account:1", big.NewInt(1000))
-	checkBalance(ctx, client, "account:2", big.NewInt(1000))
-	checkBalance(ctx, client, "account:3", big.NewInt(1000))
+	checkAllBalances(ctx, client, numAccounts, totalBalance)
 
-	runTrade(ctx, client)
+	runTrade(ctx, client, numAccounts)
 
-	checkBalance(ctx, client, "account:0", big.NewInt(990))
-	checkBalance(ctx, client, "account:1", big.NewInt(1010))
-	checkBalance(ctx, client, "account:2", big.NewInt(1000))
-	checkBalance(ctx, client, "account:3", big.NewInt(1000))
+	checkAllBalances(ctx, client, numAccounts, totalBalance)
+
+	runTrade(ctx, client, numAccounts)
+
+	checkAllBalances(ctx, client, numAccounts, totalBalance)
+}
+
+func checkAllBalances(ctx context.Context, client *sdk.Formance, numAccounts int, totalBalance *big.Int) {
+	actualBalance := big.NewInt(0)
+
+	for i := 0; i < numAccounts; i++ {
+		accountName := fmt.Sprintf("account:%s", fmt.Sprint(int64(i)))
+
+		fmt.Printf("Checking balance of %s...\r\n", accountName)
+
+		account, err := client.Ledger.V2GetAccount(ctx, operations.V2GetAccountRequest{
+			Address: accountName,
+			Expand:  pointer.For("volumes"),
+			Ledger:  "default",
+		})
+
+		if err == nil {
+			balance := account.V2AccountResponse.Data.Volumes["USD/2"].Balance
+
+			fmt.Printf("Balance of %s is %d\r\n", accountName, balance)
+
+			actualBalance = actualBalance.Add(actualBalance, balance)
+		}
+	}
+
+	fmt.Printf("Expect total balance to be %d and got %d\r\n", totalBalance, actualBalance)
+	assert.Always(
+		actualBalance.Cmp(totalBalance) == 0,
+		"actual balance should match total",
+		Details{
+			"balance": actualBalance,
+		},
+	)
 }
 
 func checkBalance(ctx context.Context, client *sdk.Formance, accountName string, totalBalance *big.Int) {
@@ -177,11 +223,11 @@ func checkBalance(ctx context.Context, client *sdk.Formance, accountName string,
 	)
 }
 
-func runTrade(ctx context.Context, client *sdk.Formance) {
-	source := int64(0)
-	dest := int64(1)
+func runTrade(ctx context.Context, client *sdk.Formance, numAccounts int) {
+	source := random.GetRandom() % uint64(numAccounts)
+	dest := random.GetRandom() % uint64(numAccounts)
 
-	amount := big.NewInt(10)
+	amount := randomTransferAmountBigInt()
 
 	fmt.Printf("Transferring %d from %d to %d\r\n", amount, source, dest)
 	_, err := client.Ledger.V2CreateTransaction(ctx, operations.V2CreateTransactionRequest{
