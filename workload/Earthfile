@@ -1,4 +1,4 @@
-VERSION 0.7
+VERSION 0.6
 
 compile:
     FROM --platform=linux/amd64 golang:1.22.2
@@ -19,4 +19,4 @@ build:
     RUN chmod 777 /bin/workload
     ENTRYPOINT ["/bin/workload"]
 
-    SAVE IMAGE --push us-central1-docker.pkg.dev/molten-verve-216720/formance-repository/workload
+    SAVE IMAGE --push us-central1-docker.pkg.dev/molten-verve-216720/formance-repository/workload:zoe-test

@@ -1,11 +1,11 @@
-VERSION 0.8
+VERSION 0.6
 
 build-configuration-image:
     FROM --platform=linux/amd64 scratch
     COPY config/docker-compose.yml /docker-compose.yml
     COPY config/Caddyfile /gateway/Caddyfile
 
-    SAVE IMAGE --push us-central1-docker.pkg.dev/molten-verve-216720/formance-repository/antithesis-config:latest
+    SAVE IMAGE --push us-central1-docker.pkg.dev/molten-verve-216720/formance-repository/antithesis-config:zoe-test
 
 build-all:
     BUILD +build-configuration-image

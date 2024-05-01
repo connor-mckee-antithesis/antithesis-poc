@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/alitto/pond"
+	// "github.com/alitto/pond"
 	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/antithesishq/antithesis-sdk-go/lifecycle"
 	"github.com/antithesishq/antithesis-sdk-go/random"
@@ -11,8 +11,8 @@ import (
 	"github.com/formancehq/formance-sdk-go/v2/pkg/models/operations"
 	"github.com/formancehq/formance-sdk-go/v2/pkg/models/shared"
 	"github.com/formancehq/stack/libs/go-libs/pointer"
-	"go.uber.org/atomic"
-	"math"
+	// "go.uber.org/atomic"
+	// "math"
 	"math/big"
 	"net/http"
 	"os"
@@ -66,7 +66,7 @@ func randomBigInt() *big.Int {
 }
 
 func runWorkload(ctx context.Context, client *sdk.Formance) {
-	const count = 1000
+	// const count = 1000
 
 	fmt.Println("Creating ledger...")
 	_, err := client.Ledger.V2CreateLedger(ctx, operations.V2CreateLedgerRequest{
@@ -78,33 +78,39 @@ func runWorkload(ctx context.Context, client *sdk.Formance) {
 		return
 	}
 
+	numAccounts := 10
+	balance := big.NewInt(1000)
+	totalBalance := big.NewInt(10000)
+
+	fundAccounts(ctx, client, numAccounts, balance)
+
 	// signals that the system is up and running
 	lifecycle.SetupComplete(Details{"Ledger": "Available"})
 
-	pool := pond.New(20, 10000)
+	// pool := pond.New(20, 10000)
 
-	totalAmount := big.NewInt(0)
+	// totalAmount := big.NewInt(0)
 
-	hasError := atomic.NewBool(false)
+	// hasError := atomic.NewBool(false)
 
-	fmt.Printf("Insert %d transactions...\r\n", count)
-	for i := 0; i < count; i++ {
-		amount := randomBigInt()
-		totalAmount = totalAmount.Add(totalAmount, amount)
-		pool.Submit(func() {
-			if err := runTrade(ctx, client, amount); err != nil {
-				hasError.CompareAndSwap(false, true)
-			}
-		})
-	}
+	// fmt.Printf("Insert %d transactions...\r\n", count)
+	// for i := 0; i < count; i++ {
+	// 	amount := randomBigInt()
+	// 	totalAmount = totalAmount.Add(totalAmount, amount)
+	// 	pool.Submit(func() {
+	// 		if err := runTrade(ctx, client, amount); err != nil {
+	// 			hasError.CompareAndSwap(false, true)
+	// 		}
+	// 	})
+	// }
 
-	pool.StopAndWait()
+	// pool.StopAndWait()
 
-	if !assert.Always(!hasError.Load(), "all transactions should have been written", Details{
-		"error": fmt.Sprintf("%+v\n", err),
-	}) {
-		return
-	}
+	// if !assert.Always(!hasError.Load(), "all transactions should have been written", Details{
+	// 	"error": fmt.Sprintf("%+v\n", err),
+	// }) {
+	// 	return
+	// }
 
 	fmt.Println("Checking balance of 'world'...")
 	account, err := client.Ledger.V2GetAccount(ctx, operations.V2GetAccountRequest{
@@ -122,33 +128,97 @@ func runWorkload(ctx context.Context, client *sdk.Formance) {
 	if !assert.Always(output != nil, "Expect output of world for USD/2 to be not empty", Details{}) {
 		return
 	}
-	fmt.Printf("Expect output of world to be %s and got %d\r\n", totalAmount, output)
+	fmt.Printf("Expect output of world to be %s and got %d\r\n", totalBalance, output)
 	assert.Always(
-		output.Cmp(totalAmount) == 0,
+		output.Cmp(totalBalance) == 0,
 		"output of 'world' should match",
 		Details{
 			"output": output,
 		},
 	)
+
+	checkBalance(ctx, client, "account:0", big.NewInt(1000))
+	checkBalance(ctx, client, "account:1", big.NewInt(1000))
+	checkBalance(ctx, client, "account:2", big.NewInt(1000))
+	checkBalance(ctx, client, "account:3", big.NewInt(1000))
+
+	runTrade(ctx, client)
+
+	checkBalance(ctx, client, "account:0", big.NewInt(990))
+	checkBalance(ctx, client, "account:1", big.NewInt(1010))
+	checkBalance(ctx, client, "account:2", big.NewInt(1000))
+	checkBalance(ctx, client, "account:3", big.NewInt(1000))
 }
 
-func runTrade(ctx context.Context, client *sdk.Formance, amount *big.Int) error {
-	orderID := fmt.Sprint(int64(math.Abs(float64(random.GetRandom()))))
+func checkBalance(ctx context.Context, client *sdk.Formance, accountName string, totalBalance *big.Int) {
+	fmt.Printf("Checking balance of %s...\r\n", accountName)
+	account, err := client.Ledger.V2GetAccount(ctx, operations.V2GetAccountRequest{
+		Address: accountName,
+		Expand:  pointer.For("volumes"),
+		Ledger:  "default",
+	})
+	if !assert.Always(err == nil, "we should be able to query account", Details{
+		"error": fmt.Sprintf("%+v\n", err),
+	}) {
+		return
+	}
 
+	balance := account.V2AccountResponse.Data.Volumes["USD/2"].Balance
+	if !assert.Always(balance != nil, "Expect balance for USD/2 to be not empty", Details{}) {
+		return
+	}
+	fmt.Printf("Expect balance of %s to be %s and got %d\r\n", accountName, totalBalance, balance)
+	assert.Always(
+		balance.Cmp(totalBalance) == 0,
+		"balance should match",
+		Details{
+			"balance": balance,
+		},
+	)
+}
+
+func runTrade(ctx context.Context, client *sdk.Formance) {
+	source := int64(0)
+	dest := int64(1)
+
+	amount := big.NewInt(10)
+
+	fmt.Printf("Transferring %d from %d to %d\r\n", amount, source, dest)
 	_, err := client.Ledger.V2CreateTransaction(ctx, operations.V2CreateTransactionRequest{
 		V2PostTransaction: shared.V2PostTransaction{
 			Postings: []shared.V2Posting{{
 				Amount:      amount,
 				Asset:       "USD/2",
-				Destination: fmt.Sprintf("orders:%s", orderID),
-				Source:      "world",
+				Destination: fmt.Sprintf("account:%s", fmt.Sprint(dest)),
+				Source:      fmt.Sprintf("account:%s", fmt.Sprint(source)),
 			}},
 		},
 		Ledger: "default",
 	})
-	assert.Always(err == nil, "creating transaction from @world to @bank should always return a nil error", Details{
+	assert.Always(err == nil, "running trade should always return a nil error", Details{
 		"error": fmt.Sprintf("%+v\n", err),
 	})
+}
 
-	return err
+func fundAccounts(ctx context.Context, client *sdk.Formance, numAccounts int, balance *big.Int) {
+	fmt.Printf("Fund %d accounts with %d each\r\n", numAccounts, balance)
+
+	for i := 0; i < numAccounts; i++ {
+		_, err := client.Ledger.V2CreateTransaction(ctx, operations.V2CreateTransactionRequest{
+			V2PostTransaction: shared.V2PostTransaction{
+				Postings: []shared.V2Posting{{
+					Amount:      balance,
+					Asset:       "USD/2",
+					Destination: fmt.Sprintf("account:%s", fmt.Sprint(int64(i))),
+					Source:      "world",
+				}},
+			},
+			Ledger: "default",
+		})
+		assert.Always(err == nil, "funding accounts should always complete without an error", Details{
+			"error": fmt.Sprintf("%+v\n", err),
+		})
+	}
+
+	fmt.Printf("Finished funding all accounts\r\n")
 }
