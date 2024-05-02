@@ -81,8 +81,6 @@ func randomTransferAmountBigInt() *big.Int {
 }
 
 func runWorkload(ctx context.Context, client *sdk.Formance) {
-	// const count = 1000
-
 	fmt.Println("Creating ledger...")
 	_, err := client.Ledger.V2CreateLedger(ctx, operations.V2CreateLedgerRequest{
 		Ledger: "default",
@@ -101,31 +99,6 @@ func runWorkload(ctx context.Context, client *sdk.Formance) {
 
 	// signals that the system is up and running
 	lifecycle.SetupComplete(Details{"Ledger": "Available"})
-
-	// pool := pond.New(20, 10000)
-
-	// totalAmount := big.NewInt(0)
-
-	// hasError := atomic.NewBool(false)
-
-	// fmt.Printf("Insert %d transactions...\r\n", count)
-	// for i := 0; i < count; i++ {
-	// 	amount := randomBigInt()
-	// 	totalAmount = totalAmount.Add(totalAmount, amount)
-	// 	pool.Submit(func() {
-	// 		if err := runTrade(ctx, client, amount); err != nil {
-	// 			hasError.CompareAndSwap(false, true)
-	// 		}
-	// 	})
-	// }
-
-	// pool.StopAndWait()
-
-	// if !assert.Always(!hasError.Load(), "all transactions should have been written", Details{
-	// 	"error": fmt.Sprintf("%+v\n", err),
-	// }) {
-	// 	return
-	// }
 
 	fmt.Println("Checking balance of 'world'...")
 	account, err := client.Ledger.V2GetAccount(ctx, operations.V2GetAccountRequest{
@@ -152,24 +125,22 @@ func runWorkload(ctx context.Context, client *sdk.Formance) {
 		},
 	)
 
-	checkAllBalances(ctx, client, numAccounts, totalBalance)
+	for i := 0; i < 1000; i++ {
+		if i % 10 == 0 {
+			checkAllBalances(ctx, client, numAccounts, totalBalance)
+		}
+		runTrade(ctx, client, numAccounts)
+	}
 
-	runTrade(ctx, client, numAccounts)
-
-	checkAllBalances(ctx, client, numAccounts, totalBalance)
-
-	runTrade(ctx, client, numAccounts)
-
-	checkAllBalances(ctx, client, numAccounts, totalBalance)
+	fmt.Printf("WORKLOAD COMPLETED\r\n")
 }
 
 func checkAllBalances(ctx context.Context, client *sdk.Formance, numAccounts int, totalBalance *big.Int) {
 	actualBalance := big.NewInt(0)
+	var allBalances []string
 
 	for i := 0; i < numAccounts; i++ {
 		accountName := fmt.Sprintf("account:%s", fmt.Sprint(int64(i)))
-
-		fmt.Printf("Checking balance of %s...\r\n", accountName)
 
 		account, err := client.Ledger.V2GetAccount(ctx, operations.V2GetAccountRequest{
 			Address: accountName,
@@ -180,45 +151,19 @@ func checkAllBalances(ctx context.Context, client *sdk.Formance, numAccounts int
 		if err == nil {
 			balance := account.V2AccountResponse.Data.Volumes["USD/2"].Balance
 
-			fmt.Printf("Balance of %s is %d\r\n", accountName, balance)
+			allBalances = append(allBalances, fmt.Sprintf("%s=%d", accountName, balance))
 
 			actualBalance = actualBalance.Add(actualBalance, balance)
 		}
 	}
 
-	fmt.Printf("Expect total balance to be %d and got %d\r\n", totalBalance, actualBalance)
+	fmt.Printf("ALL BALANCES: %v\r\n", allBalances)
+	fmt.Printf("VALIDATE: Expected total balance to be %d and got %d\r\n", totalBalance, actualBalance)
 	assert.Always(
 		actualBalance.Cmp(totalBalance) == 0,
 		"actual balance should match total",
 		Details{
 			"balance": actualBalance,
-		},
-	)
-}
-
-func checkBalance(ctx context.Context, client *sdk.Formance, accountName string, totalBalance *big.Int) {
-	fmt.Printf("Checking balance of %s...\r\n", accountName)
-	account, err := client.Ledger.V2GetAccount(ctx, operations.V2GetAccountRequest{
-		Address: accountName,
-		Expand:  pointer.For("volumes"),
-		Ledger:  "default",
-	})
-	if !assert.Always(err == nil, "we should be able to query account", Details{
-		"error": fmt.Sprintf("%+v\n", err),
-	}) {
-		return
-	}
-
-	balance := account.V2AccountResponse.Data.Volumes["USD/2"].Balance
-	if !assert.Always(balance != nil, "Expect balance for USD/2 to be not empty", Details{}) {
-		return
-	}
-	fmt.Printf("Expect balance of %s to be %s and got %d\r\n", accountName, totalBalance, balance)
-	assert.Always(
-		balance.Cmp(totalBalance) == 0,
-		"balance should match",
-		Details{
-			"balance": balance,
 		},
 	)
 }
@@ -229,7 +174,7 @@ func runTrade(ctx context.Context, client *sdk.Formance, numAccounts int) {
 
 	amount := randomTransferAmountBigInt()
 
-	fmt.Printf("Transferring %d from %d to %d\r\n", amount, source, dest)
+	fmt.Printf("TRANSFER: %d from %d to %d\r\n", amount, source, dest)
 	_, err := client.Ledger.V2CreateTransaction(ctx, operations.V2CreateTransactionRequest{
 		V2PostTransaction: shared.V2PostTransaction{
 			Postings: []shared.V2Posting{{
